@@ -119,7 +119,9 @@ function RepCounter({
 
 // ─── Main Workout Page ────────────────────────────────────────────────────────
 
-export default function WorkoutPage() {
+import { Suspense } from 'react';
+
+function WorkoutPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { equipment } = useSettingsStore();
@@ -458,5 +460,18 @@ export default function WorkoutPage() {
         </div>
       )}
     </main>
+  );
+}
+
+
+export default function WorkoutPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full" />
+      </main>
+    }>
+      <WorkoutPageInner />
+    </Suspense>
   );
 }
