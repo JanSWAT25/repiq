@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type Equipment = 'floor' | 'pullup_bar' | 'rings' | 'dip_bars' | 'vest';
+export type Equipment = 'floor' | 'pullup_bar' | 'rings' | 'dip_bars' | 'vest' | 'wall';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
 interface SettingsState {
