@@ -1,62 +1,33 @@
 // lib/pose/stateMachines/squat.ts
 import { avgAngle, landmarksVisible, type Point2D } from '../angles';
-import { LM } from '../poseLandmarker';
+import { KP } from '../moveNet';
 
-export interface SquatTracker {
-  update: (lm: Point2D[], timestampMs: number) => SquatEvent;
-  getReps: () => number;
-  reset: () => void;
-}
-
-export interface SquatEvent {
-  event: 'tracking' | 'descended' | 'rep' | 'error';
-  count?: number;
-  kneeAngle?: number;
-  formIssue?: string;
-}
-
-export function makeSquatTracker(opts = {
-  downAngle: 100,
-  upAngle: 160,
-  holdMs: 120,
-}): SquatTracker {
+export function makeSquatTracker(opts = { downAngle: 100, upAngle: 160, holdMs: 120 }) {
   let state: 'up' | 'down' = 'up';
   let reps = 0;
   let lastTransition = 0;
 
-  function update(lm: Point2D[], timestampMs: number): SquatEvent {
-    const required = [LM.L_HIP, LM.L_KNEE, LM.L_ANKLE,
-                      LM.R_HIP, LM.R_KNEE, LM.R_ANKLE];
-    if (!landmarksVisible(lm, required, 0.4)) {
-      return { event: 'error', formIssue: 'Full body must be visible' };
+  function update(lm: Point2D[], timestampMs: number) {
+    const required = [KP.LEFT_HIP, KP.LEFT_KNEE, KP.LEFT_ANKLE,
+                      KP.RIGHT_HIP, KP.RIGHT_KNEE, KP.RIGHT_ANKLE];
+    if (!landmarksVisible(lm, required, 0.3)) {
+      return { event: 'error' as const, formIssue: 'Full body must be visible' };
     }
-
     const knee = avgAngle(lm,
-      LM.L_HIP, LM.L_KNEE, LM.L_ANKLE,
-      LM.R_HIP, LM.R_KNEE, LM.R_ANKLE
+      KP.LEFT_HIP, KP.LEFT_KNEE, KP.LEFT_ANKLE,
+      KP.RIGHT_HIP, KP.RIGHT_KNEE, KP.RIGHT_ANKLE
     );
-
     const elapsed = timestampMs - lastTransition;
-
     if (state === 'up' && knee < opts.downAngle && elapsed > opts.holdMs) {
-      state = 'down';
-      lastTransition = timestampMs;
-      return { event: 'descended', kneeAngle: knee };
+      state = 'down'; lastTransition = timestampMs;
+      return { event: 'descended' as const, kneeAngle: knee };
     }
-
     if (state === 'down' && knee > opts.upAngle && elapsed > opts.holdMs) {
-      reps++;
-      state = 'up';
-      lastTransition = timestampMs;
-      return { event: 'rep', count: reps, kneeAngle: knee };
+      reps++; state = 'up'; lastTransition = timestampMs;
+      return { event: 'rep' as const, count: reps, kneeAngle: knee };
     }
-
-    return { event: 'tracking', kneeAngle: knee };
+    return { event: 'tracking' as const, kneeAngle: knee };
   }
 
-  return {
-    update,
-    getReps: () => reps,
-    reset: () => { state = 'up'; reps = 0; lastTransition = 0; },
-  };
+  return { update, getReps: () => reps, reset: () => { state = 'up'; reps = 0; lastTransition = 0; } };
 }

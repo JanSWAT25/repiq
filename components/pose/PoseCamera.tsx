@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { getPoseLandmarker, disposeLandmarker } from '@/lib/pose/poseLandmarker';
+import { getMoveNetDetector, keypointsToLandmarks, KP } from '@/lib/pose/moveNet';
 import { createTrackerForExercise } from '@/lib/pose/exerciseTrackers';
 import { calcFormScore, tempoToEccentricMs } from '@/lib/pose/formScore';
+import { angle3pt } from '@/lib/pose/angles';
 
 interface PoseCameraProps {
   exerciseId: string;
@@ -14,48 +15,44 @@ interface PoseCameraProps {
   onError: (msg: string) => void;
 }
 
-// Draw skeleton on canvas
-function drawSkeleton(ctx: CanvasRenderingContext2D, landmarks: any[], w: number, h: number) {
+// Draw MoveNet skeleton on canvas
+function drawSkeleton(ctx: CanvasRenderingContext2D, keypoints: any[], w: number, h: number) {
   const connections = [
-    [11, 13], [13, 15], // L arm
-    [12, 14], [14, 16], // R arm
-    [11, 12],           // shoulders
-    [11, 23], [12, 24], // torso
-    [23, 24],           // hips
-    [23, 25], [25, 27], // L leg
-    [24, 26], [26, 28], // R leg
+    [KP.LEFT_SHOULDER, KP.LEFT_ELBOW], [KP.LEFT_ELBOW, KP.LEFT_WRIST],
+    [KP.RIGHT_SHOULDER, KP.RIGHT_ELBOW], [KP.RIGHT_ELBOW, KP.RIGHT_WRIST],
+    [KP.LEFT_SHOULDER, KP.RIGHT_SHOULDER],
+    [KP.LEFT_SHOULDER, KP.LEFT_HIP], [KP.RIGHT_SHOULDER, KP.RIGHT_HIP],
+    [KP.LEFT_HIP, KP.RIGHT_HIP],
+    [KP.LEFT_HIP, KP.LEFT_KNEE], [KP.LEFT_KNEE, KP.LEFT_ANKLE],
+    [KP.RIGHT_HIP, KP.RIGHT_KNEE], [KP.RIGHT_KNEE, KP.RIGHT_ANKLE],
   ];
 
   ctx.strokeStyle = '#ef4444';
   ctx.lineWidth = 2;
 
   for (const [a, b] of connections) {
-    const lmA = landmarks[a];
-    const lmB = landmarks[b];
-    if (!lmA || !lmB) continue;
-    if ((lmA.visibility ?? 1) < 0.3 || (lmB.visibility ?? 1) < 0.3) continue;
+    const kpA = keypoints[a];
+    const kpB = keypoints[b];
+    if (!kpA || !kpB) continue;
+    if ((kpA.score ?? 0) < 0.3 || (kpB.score ?? 0) < 0.3) continue;
     ctx.beginPath();
-    ctx.moveTo(lmA.x * w, lmA.y * h);
-    ctx.lineTo(lmB.x * w, lmB.y * h);
+    ctx.moveTo(kpA.x * w / 192, kpA.y * h / 192);
+    ctx.lineTo(kpB.x * w / 192, kpB.y * h / 192);
     ctx.stroke();
   }
 
   ctx.fillStyle = '#ffffff';
-  for (const lm of landmarks) {
-    if (!lm || (lm.visibility ?? 1) < 0.3) continue;
+  for (const kp of keypoints) {
+    if (!kp || (kp.score ?? 0) < 0.3) continue;
     ctx.beginPath();
-    ctx.arc(lm.x * w, lm.y * h, 4, 0, 2 * Math.PI);
+    ctx.arc(kp.x * w / 192, kp.y * h / 192, 4, 0, 2 * Math.PI);
     ctx.fill();
   }
 }
 
 export function PoseCamera({
-  exerciseId,
-  tempo,
-  targetReps,
-  onRepCounted,
-  onFormScore,
-  onError,
+  exerciseId, tempo, targetReps,
+  onRepCounted, onFormScore, onError,
 }: PoseCameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -73,17 +70,16 @@ export function PoseCamera({
   const [status, setStatus] = useState<'idle' | 'requesting' | 'ready' | 'error'>('idle');
   const [repCount, setRepCount] = useState(0);
   const [formIssue, setFormIssue] = useState<string | null>(null);
-  const [allLandmarksVisible, setAllLandmarksVisible] = useState(false);
+  const [bodyVisible, setBodyVisible] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState('Starting camera...');
 
   const startCamera = useCallback(async () => {
     setStatus('requesting');
+    setLoadingMsg('Starting camera...');
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-        },
+        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false,
       });
 
@@ -96,120 +92,103 @@ export function PoseCamera({
         videoRef.current.onloadeddata = () => resolve();
       });
 
+      setLoadingMsg('Loading MoveNet model (~2MB)...');
+
+      // Load MoveNet with 15s timeout
       await Promise.race([
-        getPoseLandmarker(),
+        getMoveNetDetector(),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Model load timeout')), 10000)
+          setTimeout(() => reject(new Error('Model load timeout after 15s')), 15000)
         ),
       ]);
 
-      // Create tracker for this exercise
       trackerRef.current = createTrackerForExercise(exerciseId);
-
       setStatus('ready');
       startInference();
     } catch (err: any) {
+      console.error('[PoseCamera] Error:', err);
       setStatus('error');
-      onError(err.message ?? 'Camera access denied');
+      onError(err.message ?? 'Camera failed');
     }
   }, [exerciseId]);
 
   function startInference() {
-    const landmarker = getPoseLandmarker();
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    function processFrame(timestampMs: number) {
+    async function processFrame() {
       rafRef.current = requestAnimationFrame(processFrame);
-
-      if (inferringRef.current) return; // skip if previous frame still processing
-      if (video!.readyState < 2) return;
-
+      if (inferringRef.current || video!.readyState < 2) return;
       inferringRef.current = true;
 
       try {
-        // Match canvas to video
         canvas!.width = video!.videoWidth;
         canvas!.height = video!.videoHeight;
-
-        // Draw video frame
         ctx!.drawImage(video!, 0, 0);
 
-        // Run pose detection
-        landmarker.then((lm: any) => {
-          try {
-            const result = lm.detectForVideo(video, timestampMs);
-            inferringRef.current = false;
+        const det = await getMoveNetDetector();
+        const poses = await det.estimatePoses(video);
+        inferringRef.current = false;
 
-            if (!result.landmarks || result.landmarks.length === 0) {
-              setAllLandmarksVisible(false);
-              return;
-            }
+        if (!poses || poses.length === 0 || !poses[0].keypoints) {
+          setBodyVisible(false);
+          return;
+        }
 
-            const landmarks = result.landmarks[0];
-            const w = canvas!.width;
-            const h = canvas!.height;
+        const keypoints = poses[0].keypoints;
+        const w = canvas!.width;
+        const h = canvas!.height;
 
-            // Draw skeleton
-            drawSkeleton(ctx!, landmarks, w, h);
+        drawSkeleton(ctx!, keypoints, w, h);
 
-            // Check overall visibility
-            const visible = landmarks.filter((l: any) => (l.visibility ?? 0) > 0.5).length;
-            setAllLandmarksVisible(visible >= 20);
+        const visible = keypoints.filter((kp: any) => (kp.score ?? 0) > 0.4).length;
+        setBodyVisible(visible >= 10);
 
-            frameCountRef.current++;
+        // Convert to normalized landmarks for state machines
+        const landmarks = keypointsToLandmarks(keypoints);
+        frameCountRef.current++;
 
-            // Run exercise tracker
-            if (trackerRef.current) {
-              const { tracker, type } = trackerRef.current as any;
-              const event = tracker.update(landmarks, timestampMs);
+        if (trackerRef.current) {
+          const { tracker } = trackerRef.current as any;
+          const event = tracker.update(landmarks, performance.now());
 
-              if (event.formIssue) {
-                setFormIssue(event.formIssue);
-              } else {
-                setFormIssue(null);
-                alignFramesRef.current++;
-              }
-
-              if (event.event === 'rep') {
-                const newCount = event.count ?? repCountRef.current + 1;
-                repCountRef.current = newCount;
-                setRepCount(newCount);
-                onRepCounted(newCount);
-
-                // Track rep duration for cadence
-                if (lastRepTimeRef.current > 0) {
-                  repDurationsRef.current.push(timestampMs - lastRepTimeRef.current);
-                }
-                lastRepTimeRef.current = timestampMs;
-
-                // Collect eccentric times if available
-                if (tracker.getStats) {
-                  const stats = tracker.getStats();
-                  eccentricTimesRef.current = stats.eccentricTimes ?? [];
-                }
-
-                // Compute form score
-                const score = calcFormScore({
-                  totalReps: newCount,
-                  repsAtDepth: newCount, // simplified — all reps counted means depth reached
-                  totalFrames: frameCountRef.current,
-                  framesInAlignment: alignFramesRef.current,
-                  eccentricTimes: eccentricTimesRef.current,
-                  targetEccentricMs: tempoToEccentricMs(tempo),
-                  repDurations: repDurationsRef.current,
-                });
-                onFormScore(score);
-              }
-            }
-          } catch {
-            inferringRef.current = false;
+          if (event.formIssue) {
+            setFormIssue(event.formIssue);
+          } else {
+            setFormIssue(null);
+            alignFramesRef.current++;
           }
-        });
+
+          if (event.event === 'rep') {
+            const newCount = event.count ?? repCountRef.current + 1;
+            repCountRef.current = newCount;
+            setRepCount(newCount);
+            onRepCounted(newCount);
+
+            if (lastRepTimeRef.current > 0) {
+              repDurationsRef.current.push(performance.now() - lastRepTimeRef.current);
+            }
+            lastRepTimeRef.current = performance.now();
+
+            if (tracker.getStats) {
+              eccentricTimesRef.current = tracker.getStats().eccentricTimes ?? [];
+            }
+
+            const score = calcFormScore({
+              totalReps: newCount,
+              repsAtDepth: newCount,
+              totalFrames: frameCountRef.current,
+              framesInAlignment: alignFramesRef.current,
+              eccentricTimes: eccentricTimesRef.current,
+              targetEccentricMs: tempoToEccentricMs(tempo),
+              repDurations: repDurationsRef.current,
+            });
+            onFormScore(score);
+          }
+        }
       } catch {
         inferringRef.current = false;
       }
@@ -218,29 +197,27 @@ export function PoseCamera({
     rafRef.current = requestAnimationFrame(processFrame);
   }
 
-  // Cleanup
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-      }
+      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
   if (status === 'idle') {
     return (
-      <div className="flex flex-col items-center gap-4 py-8">
+      <div className="flex flex-col items-center gap-4 py-6">
         <p className="text-sm text-neutral-400 text-center px-4">
-          Use your camera to automatically count reps and score your form.
+          Auto-count reps using your camera with MoveNet AI.
         </p>
-        <div className="text-xs text-neutral-500 text-center px-4 mb-2">
-          📱 Place phone 6–10 ft away · Side view · Good lighting - Requires fast internet · ~7MB model download
+        <div className="text-xs text-neutral-500 text-center px-4">
+          📱 Side view · 6–10 ft away · Good lighting
         </div>
-        <button
-          onClick={startCamera}
-          className="bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-xl transition-colors"
-        >
+        <div className="text-xs text-green-500 text-center">
+          ⚡ Fast loading (~2MB model)
+        </div>
+        <button onClick={startCamera}
+          className="bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-xl transition-colors">
           📷 Enable Camera
         </button>
       </div>
@@ -251,13 +228,11 @@ export function PoseCamera({
     return (
       <div className="flex flex-col items-center gap-3 py-8">
         <div className="animate-spin w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full" />
-        <p className="text-sm text-neutral-400">Loading pose detection...</p>
-        <p className="text-xs text-neutral-600">First load may take 30s</p>
-        <button
-          onClick={() => setStatus('error')}
-          className="text-xs text-neutral-500 underline mt-2"
-        >
-          Cancel and use manual counting
+        <p className="text-sm text-neutral-400">{loadingMsg}</p>
+        <p className="text-xs text-neutral-600">Usually ready in 3–5 seconds</p>
+        <button onClick={() => { setStatus('error'); onError('Cancelled'); }}
+          className="text-xs text-neutral-500 underline mt-2">
+          Cancel — use manual counting
         </button>
       </div>
     );
@@ -265,39 +240,33 @@ export function PoseCamera({
 
   if (status === 'error') {
     return (
-      <div className="flex flex-col items-center gap-3 py-8 px-4">
+      <div className="flex flex-col items-center gap-2 py-6 px-4">
         <p className="text-red-400 text-sm text-center">
-          Camera unavailable. Use manual rep counting below.
+          Camera unavailable — using manual counting below.
         </p>
+        <button onClick={startCamera} className="text-xs text-neutral-400 underline">
+          Try again
+        </button>
       </div>
     );
   }
 
   return (
     <div className="relative w-full">
-      {/* Video + canvas overlay */}
       <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          playsInline
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full"
-        />
+        <video ref={videoRef} autoPlay muted playsInline
+          className="absolute inset-0 w-full h-full object-cover" />
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
 
-        {/* Ready indicator */}
+        {/* Status dot */}
         <div className="absolute top-2 left-2 flex items-center gap-1.5">
-          <div className={`w-2 h-2 rounded-full ${allLandmarksVisible ? 'bg-green-400' : 'bg-yellow-400'}`} />
+          <div className={`w-2 h-2 rounded-full ${bodyVisible ? 'bg-green-400' : 'bg-yellow-400'}`} />
           <span className="text-xs text-white bg-black/50 px-2 py-0.5 rounded-full">
-            {allLandmarksVisible ? 'Tracking' : 'Adjust position'}
+            {bodyVisible ? 'Tracking ✓' : 'Adjust position'}
           </span>
         </div>
 
-        {/* Rep counter overlay */}
+        {/* Rep counter */}
         <div className="absolute top-2 right-2 bg-black/70 rounded-xl px-3 py-2 text-center">
           <div className="text-3xl font-black text-white">{repCount}</div>
           <div className="text-xs text-neutral-400">/ {targetReps}</div>
@@ -311,10 +280,9 @@ export function PoseCamera({
         )}
       </div>
 
-      {/* CV not supported message */}
-      {!trackerRef.current && status === 'ready' && (
+      {!trackerRef.current && (
         <p className="text-xs text-neutral-500 text-center mt-2">
-          Auto rep counting not available for this exercise. Count manually below.
+          Auto-counting not available for this exercise. Count manually below.
         </p>
       )}
     </div>

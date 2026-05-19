@@ -1,59 +1,29 @@
 // lib/pose/stateMachines/glutebridge.ts
 import { angle3pt, landmarksVisible, type Point2D } from '../angles';
-import { LM } from '../poseLandmarker';
+import { KP } from '../moveNet';
 
-export interface GluteBridgeTracker {
-  update: (lm: Point2D[], timestampMs: number) => GluteBridgeEvent;
-  getReps: () => number;
-  reset: () => void;
-}
-
-export interface GluteBridgeEvent {
-  event: 'tracking' | 'extended' | 'rep' | 'error';
-  count?: number;
-  hipAngle?: number;
-  formIssue?: string;
-}
-
-export function makeGluteBridgeTracker(opts = {
-  upAngle: 170,
-  downAngle: 140,
-  holdMs: 100,
-}): GluteBridgeTracker {
+export function makeGluteBridgeTracker(opts = { upAngle: 170, downAngle: 140, holdMs: 100 }) {
   let state: 'down' | 'up' = 'down';
   let reps = 0;
   let lastTransition = 0;
 
-  function update(lm: Point2D[], timestampMs: number): GluteBridgeEvent {
-    const required = [LM.L_SHOULDER, LM.L_HIP, LM.L_KNEE];
-    if (!landmarksVisible(lm, required, 0.4)) {
-      return { event: 'error', formIssue: 'Move into frame' };
+  function update(lm: Point2D[], timestampMs: number) {
+    const required = [KP.LEFT_SHOULDER, KP.LEFT_HIP, KP.LEFT_KNEE];
+    if (!landmarksVisible(lm, required, 0.3)) {
+      return { event: 'error' as const, formIssue: 'Move into frame' };
     }
-
-    const hipAngle = angle3pt(
-      lm[LM.L_SHOULDER], lm[LM.L_HIP], lm[LM.L_KNEE]
-    );
+    const hipAngle = angle3pt(lm[KP.LEFT_SHOULDER], lm[KP.LEFT_HIP], lm[KP.LEFT_KNEE]);
     const elapsed = timestampMs - lastTransition;
-
     if (state === 'down' && hipAngle > opts.upAngle && elapsed > opts.holdMs) {
-      state = 'up';
-      lastTransition = timestampMs;
-      return { event: 'extended', hipAngle };
+      state = 'up'; lastTransition = timestampMs;
+      return { event: 'extended' as const, hipAngle };
     }
-
     if (state === 'up' && hipAngle < opts.downAngle && elapsed > opts.holdMs) {
-      reps++;
-      state = 'down';
-      lastTransition = timestampMs;
-      return { event: 'rep', count: reps, hipAngle };
+      reps++; state = 'down'; lastTransition = timestampMs;
+      return { event: 'rep' as const, count: reps, hipAngle };
     }
-
-    return { event: 'tracking', hipAngle };
+    return { event: 'tracking' as const, hipAngle };
   }
 
-  return {
-    update,
-    getReps: () => reps,
-    reset: () => { state = 'down'; reps = 0; lastTransition = 0; },
-  };
+  return { update, getReps: () => reps, reset: () => { state = 'down'; reps = 0; lastTransition = 0; } };
 }
