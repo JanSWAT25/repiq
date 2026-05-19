@@ -90,6 +90,7 @@ export const useUserStore = create<UserState>()(
     }),
     {
       name: 'repiq-user-store',
+    skipHydration: true,
     }
   )
 );
