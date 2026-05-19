@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { getExerciseSVG } from '@/lib/workout/exerciseSVGs';
 import { getCameraPosition } from '@/lib/workout/exerciseMedia';
 import type { Exercise } from '@/lib/workout/exerciseLibrary';
 
@@ -16,63 +17,86 @@ interface ExerciseDemoProps {
 export function ExerciseDemo({
   exercise, targetReps, rir, tempo, restSec, onStartSet
 }: ExerciseDemoProps) {
-  const [svgLoaded, setSvgLoaded] = useState(false);
-  const [svgError, setSvgError] = useState(false);
+  const [svgContent, setSvgContent] = useState<string>('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [useAI, setUseAI] = useState(false);
   const cameraPos = getCameraPosition(exercise.id);
-  const svgUrl = `/api/exercise-demo?id=${exercise.id}`;
+
+  // Load built-in SVG on mount
+  useEffect(() => {
+    setSvgContent(getExerciseSVG(exercise.id));
+  }, [exercise.id]);
+
+  // Optionally load AI-enhanced version
+  async function loadAIDemo() {
+    setAiLoading(true);
+    try {
+      const res = await fetch(`/api/exercise-demo?id=${exercise.id}`);
+      const svg = await res.text();
+      if (svg.includes('<svg')) {
+        setSvgContent(svg);
+        setUseAI(true);
+      }
+    } catch {}
+    setAiLoading(false);
+  }
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Exercise Demo - AI Generated SVG */}
-      <div className="relative bg-[#0a0a0a] border border-[#1a1a1a] rounded-2xl overflow-hidden aspect-video">
-        {!svgError ? (
-          <>
-            {!svgLoaded && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                <div className="animate-spin w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full" />
-                <p className="text-xs text-neutral-600">Generating demo...</p>
-              </div>
-            )}
-            <img
-              src={svgUrl}
-              alt={exercise.name}
-              className={`w-full h-full object-contain transition-opacity duration-300 ${svgLoaded ? 'opacity-100' : 'opacity-0'}`}
-              onLoad={() => setSvgLoaded(true)}
-              onError={() => { setSvgError(true); setSvgLoaded(true); }}
-            />
-          </>
+      {/* Exercise Demo */}
+      <div className="relative bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl overflow-hidden"
+           style={{ aspectRatio: '16/10' }}>
+        {svgContent ? (
+          <div
+            className="w-full h-full"
+            dangerouslySetInnerHTML={{ __html: svgContent }}
+          />
         ) : (
-          <FallbackAnimation exercise={exercise} />
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="animate-spin w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full" />
+          </div>
         )}
-        <div className="absolute top-2 left-2 bg-black/60 rounded-lg px-2 py-1">
-          <p className="text-xs text-red-400 font-semibold">AI Demo</p>
+        {/* Label */}
+        <div className="absolute top-2 left-2 flex items-center gap-1.5">
+          <div className="bg-black/70 rounded-lg px-2 py-1 flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            <p className="text-xs text-neutral-300 font-medium">
+              {useAI ? 'AI Enhanced' : 'Animation'}
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Exercise details */}
-      <div className="bg-[#141414] border border-[#262626] rounded-xl p-4">
-        <h3 className="text-lg font-bold mb-2">{exercise.name}</h3>
-        <p className="text-sm text-neutral-400 mb-3">{exercise.description}</p>
+      {/* Exercise info card */}
+      <div className="bg-[#141414] border border-[#262626] rounded-2xl p-4">
+        <div className="flex items-start justify-between mb-2">
+          <h3 className="text-lg font-bold">{exercise.name}</h3>
+          <span className="text-xs text-neutral-600 bg-neutral-800 px-2 py-1 rounded-full">
+            Tier {exercise.tier}
+          </span>
+        </div>
+        <p className="text-sm text-neutral-400 mb-4">{exercise.description}</p>
 
-        {/* Set prescription grid */}
-        <div className="grid grid-cols-4 gap-2 mb-3">
+        {/* Set prescription */}
+        <div className="grid grid-cols-4 gap-2 mb-4">
           {[
-            { label: 'Reps', value: targetReps },
-            { label: 'RIR', value: rir },
-            { label: 'Tempo', value: tempo },
-            { label: 'Rest', value: `${restSec}s` },
+            { label: 'Reps', value: targetReps, color: 'text-white' },
+            { label: 'RIR', value: rir, color: 'text-yellow-400' },
+            { label: 'Tempo', value: tempo, color: 'text-blue-400' },
+            { label: 'Rest', value: `${restSec}s`, color: 'text-green-400' },
           ].map((item) => (
-            <div key={item.label} className="bg-neutral-800 rounded-lg p-2 text-center">
-              <div className="text-sm font-bold">{item.value}</div>
-              <div className="text-xs text-neutral-500">{item.label}</div>
+            <div key={item.label} className="bg-neutral-800/80 rounded-xl p-2.5 text-center">
+              <div className={`text-base font-bold ${item.color}`}>{item.value}</div>
+              <div className="text-xs text-neutral-500 mt-0.5">{item.label}</div>
             </div>
           ))}
         </div>
 
         {/* Muscle groups */}
-        <div className="flex flex-wrap gap-1.5 mb-3">
+        <div className="flex flex-wrap gap-1.5 mb-4">
           {exercise.muscleGroups.map((m) => (
-            <span key={m} className="text-xs bg-red-900/30 text-red-400 border border-red-900/50 px-2 py-0.5 rounded-full capitalize">
+            <span key={m}
+              className="text-xs bg-red-950/50 text-red-400 border border-red-900/40 px-2.5 py-1 rounded-full capitalize font-medium">
               {m}
             </span>
           ))}
@@ -80,9 +104,14 @@ export function ExerciseDemo({
 
         {/* Camera position */}
         {exercise.cvSupported && (
-          <div className="bg-blue-900/20 border border-blue-800/40 rounded-lg px-3 py-2 mb-3">
-            <p className="text-xs font-bold text-blue-400 mb-0.5">📷 Camera Position</p>
-            <p className="text-xs text-blue-200">{cameraPos} · 6–10 ft away</p>
+          <div className="bg-blue-950/30 border border-blue-900/40 rounded-xl px-3 py-2.5 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📷</span>
+              <div>
+                <p className="text-xs font-bold text-blue-400">Camera Position</p>
+                <p className="text-xs text-blue-300/80">{cameraPos} · 6–10 ft away</p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -90,9 +119,10 @@ export function ExerciseDemo({
         <FormCues exerciseId={exercise.id} />
       </div>
 
+      {/* Start button */}
       <button
         onClick={onStartSet}
-        className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-4 rounded-xl text-lg transition-colors"
+        className="w-full bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-bold py-4 rounded-2xl text-lg transition-colors shadow-lg shadow-red-900/30"
       >
         Start Set 🔥
       </button>
@@ -100,66 +130,103 @@ export function ExerciseDemo({
   );
 }
 
-// Fallback animated SVG if API fails
-function FallbackAnimation({ exercise }: { exercise: Exercise }) {
-  const cat = exercise.category;
-  return (
-    <div className="w-full h-full flex items-center justify-center">
-      <svg viewBox="0 0 300 200" className="w-full h-full">
-        <style>{`
-          @keyframes pushup { 0%,100%{transform:translateY(0)} 50%{transform:translateY(20px)} }
-          @keyframes squat { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(0.65) translateY(20px)} }
-          @keyframes pullup { 0%,100%{transform:translateY(20px)} 50%{transform:translateY(0)} }
-          @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
-          .anim-push { animation: pushup 2s ease-in-out infinite; }
-          .anim-squat { animation: squat 2s ease-in-out infinite; transform-origin: bottom; }
-          .anim-pull { animation: pullup 2s ease-in-out infinite; }
-          .anim-pulse { animation: pulse 2s ease-in-out infinite; }
-        `}</style>
-        <rect width="300" height="200" fill="#0a0a0a"/>
-        <line x1="20" y1="175" x2="280" y2="175" stroke="#1a1a1a" stroke-width="2"/>
-        <g className={
-          cat.includes('push') || cat === 'dip' ? 'anim-push' :
-          cat.includes('squat') || cat.includes('hinge') ? 'anim-squat' :
-          cat.includes('pull') ? 'anim-pull' : 'anim-pulse'
-        } transform="translate(110, 40)">
-          <circle cx="40" cy="15" r="14" fill="none" stroke="#ef4444" strokeWidth="2.5"/>
-          <line x1="40" y1="29" x2="40" y2="75" stroke="#ef4444" strokeWidth="2.5"/>
-          <line x1="40" y1="45" x2="15" y2="65" stroke="#ef4444" strokeWidth="2.5"/>
-          <line x1="40" y1="45" x2="65" y2="65" stroke="#ef4444" strokeWidth="2.5"/>
-          <line x1="40" y1="75" x2="25" y2="110" stroke="#ef4444" strokeWidth="2.5"/>
-          <line x1="40" y1="75" x2="55" y2="110" stroke="#ef4444" strokeWidth="2.5"/>
-          <circle cx="25" cy="113" r="4" fill="#ef4444"/>
-          <circle cx="55" cy="113" r="4" fill="#ef4444"/>
-        </g>
-        <text x="150" y="193" textAnchor="middle" fill="#333" fontSize="9" fontFamily="sans-serif">
-          {exercise.name}
-        </text>
-      </svg>
-    </div>
-  );
-}
-
-// Form cues
 function FormCues({ exerciseId }: { exerciseId: string }) {
-  const cues: Record<string, string[]> = {
-    push_standard: ['Keep body in a straight line', 'Chest touches the floor', 'Elbows at 45° from torso', 'Full lockout at top'],
-    push_incline: ['Same form as standard push-up', 'Hands elevated reduces difficulty', 'Great for learning the movement'],
-    push_diamond: ['Hands form a diamond shape', 'Heavy tricep emphasis', 'Keep elbows close to body'],
-    push_decline: ['Feet elevated, upper chest focus', 'Keep core tight', 'Control the descent'],
-    push_archer: ['One arm takes most load', 'Other arm extends laterally', 'Alternate sides each rep'],
-    pull_strict: ['Dead hang start position', 'Pull chin over the bar', 'Full arm extension at bottom', 'No kipping or swinging'],
-    pull_chin: ['Supinated (palms facing you) grip', 'Greater bicep involvement', 'Full range of motion'],
-    row_australian: ['Body horizontal under bar', 'Pull chest to bar', 'Squeeze shoulder blades'],
-    squat_bodyweight: ['Feet shoulder-width apart', 'Knees track over toes', 'Hip crease below parallel', 'Chest up throughout'],
-    squat_bulgarian: ['Rear foot elevated on bench', 'Front foot far forward enough', 'Keep torso upright', 'Drive through front heel'],
-    hinge_glute_bridge: ['Feet flat on floor', 'Drive hips to full extension', 'Squeeze glutes at top', '2-second hold'],
-    hinge_hip_thrust: ['Shoulders on bench edge', 'Drive hips up explosively', 'Full hip extension at top'],
-    core_plank: ['Straight line head to heels', 'Hips level — no sagging', 'Breathe steadily', 'Engage core and glutes'],
-    dip_parallel: ['Full depth — shoulders below elbows', 'Chest forward for chest focus', 'Full lockout at top'],
-    cond_burpee: ['Squat down, jump feet back', 'Perform push-up', 'Jump feet forward', 'Explosive jump with arms up'],
-    cond_mountain_climber: ['Plank position throughout', 'Drive knees to chest alternately', 'Keep hips level and stable'],
-    cond_lunge: ['Step back into lunge', 'Front knee at 90°', 'Keep torso upright', 'Drive through front heel to return'],
+  const cues: Record<string, { cue: string; type: 'do' | 'dont' }[]> = {
+    push_standard: [
+      { cue: 'Keep body in a perfectly straight line', type: 'do' },
+      { cue: 'Chest touches (or near) the floor', type: 'do' },
+      { cue: 'Elbows at 45° from your torso', type: 'do' },
+      { cue: "Don't let hips sag or pike", type: 'dont' },
+    ],
+    push_incline: [
+      { cue: 'Same straight-line form as standard', type: 'do' },
+      { cue: 'Hands elevated on bench or step', type: 'do' },
+      { cue: 'Great for learning push-up mechanics', type: 'do' },
+    ],
+    push_diamond: [
+      { cue: 'Hands form a diamond/triangle shape', type: 'do' },
+      { cue: 'Keep elbows close to body', type: 'do' },
+      { cue: 'Heavy tricep and inner chest focus', type: 'do' },
+    ],
+    push_decline: [
+      { cue: 'Feet elevated on bench', type: 'do' },
+      { cue: 'Targets upper chest and shoulders', type: 'do' },
+      { cue: 'Control the descent — 3 seconds down', type: 'do' },
+    ],
+    push_archer: [
+      { cue: 'One arm bends, other extends laterally', type: 'do' },
+      { cue: 'Shift bodyweight over bending arm', type: 'do' },
+      { cue: "Don't rush — control both directions", type: 'dont' },
+    ],
+    pull_strict: [
+      { cue: 'Start from a full dead hang', type: 'do' },
+      { cue: 'Pull until chin clears the bar', type: 'do' },
+      { cue: 'Full arm extension at the bottom', type: 'do' },
+      { cue: 'No kipping or swinging momentum', type: 'dont' },
+    ],
+    pull_chin: [
+      { cue: 'Palms facing toward you (supinated)', type: 'do' },
+      { cue: 'Greater bicep involvement than pull-up', type: 'do' },
+      { cue: 'Full range of motion — dead hang to chin over', type: 'do' },
+    ],
+    row_australian: [
+      { cue: 'Body as horizontal as possible', type: 'do' },
+      { cue: 'Pull chest to bar — not just chin', type: 'do' },
+      { cue: 'Squeeze shoulder blades at top', type: 'do' },
+      { cue: "Don't let hips drop", type: 'dont' },
+    ],
+    squat_bodyweight: [
+      { cue: 'Feet shoulder-width, toes slightly out', type: 'do' },
+      { cue: 'Knees track over toes throughout', type: 'do' },
+      { cue: 'Hip crease below parallel (full depth)', type: 'do' },
+      { cue: "Don't let heels rise off the floor", type: 'dont' },
+    ],
+    squat_bulgarian: [
+      { cue: 'Rear foot elevated on bench', type: 'do' },
+      { cue: 'Front foot far enough forward', type: 'do' },
+      { cue: 'Drive through front heel to stand', type: 'do' },
+      { cue: "Don't let front knee cave inward", type: 'dont' },
+    ],
+    hinge_glute_bridge: [
+      { cue: 'Feet flat on floor, hip-width apart', type: 'do' },
+      { cue: 'Drive hips up to full extension', type: 'do' },
+      { cue: 'Squeeze glutes hard at top — 2s hold', type: 'do' },
+      { cue: "Don't hyperextend the lower back", type: 'dont' },
+    ],
+    hinge_hip_thrust: [
+      { cue: 'Upper back on bench edge', type: 'do' },
+      { cue: 'Drive hips up explosively', type: 'do' },
+      { cue: 'Full hip extension — body parallel to floor', type: 'do' },
+    ],
+    core_plank: [
+      { cue: 'Straight line from head to heels', type: 'do' },
+      { cue: 'Hips level — not sagging or piking', type: 'do' },
+      { cue: 'Breathe steadily throughout', type: 'do' },
+      { cue: "Don't hold your breath", type: 'dont' },
+    ],
+    dip_parallel: [
+      { cue: 'Lower until shoulders below elbows', type: 'do' },
+      { cue: 'Lean forward slightly for chest focus', type: 'do' },
+      { cue: 'Full lockout at the top', type: 'do' },
+      { cue: "Don't flare elbows out wide", type: 'dont' },
+    ],
+    cond_burpee: [
+      { cue: 'Squat, jump feet back to plank', type: 'do' },
+      { cue: 'Perform a full push-up', type: 'do' },
+      { cue: 'Jump feet forward, then explosive jump', type: 'do' },
+    ],
+    cond_mountain_climber: [
+      { cue: 'Stay in solid plank position', type: 'do' },
+      { cue: 'Drive knees to chest alternately', type: 'do' },
+      { cue: 'Keep hips level and stable', type: 'do' },
+      { cue: "Don't let hips bounce up and down", type: 'dont' },
+    ],
+    cond_lunge: [
+      { cue: 'Step back into lunge', type: 'do' },
+      { cue: 'Front knee at 90° over ankle', type: 'do' },
+      { cue: 'Keep torso upright, core engaged', type: 'do' },
+      { cue: "Don't let front knee go past toes", type: 'dont' },
+    ],
   };
 
   const exerciseCues = cues[exerciseId];
@@ -167,12 +234,16 @@ function FormCues({ exerciseId }: { exerciseId: string }) {
 
   return (
     <div>
-      <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2">Form Cues</p>
-      <ul className="space-y-1.5">
-        {exerciseCues.map((cue, i) => (
-          <li key={i} className="flex items-start gap-2 text-xs text-neutral-300">
-            <span className="text-green-400 mt-0.5 shrink-0">✓</span>
-            <span>{cue}</span>
+      <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2.5">Form Cues</p>
+      <ul className="space-y-2">
+        {exerciseCues.map((item, i) => (
+          <li key={i} className="flex items-start gap-2 text-xs">
+            <span className={`mt-0.5 shrink-0 font-bold ${item.type === 'do' ? 'text-green-400' : 'text-red-400'}`}>
+              {item.type === 'do' ? '✓' : '✗'}
+            </span>
+            <span className={item.type === 'do' ? 'text-neutral-300' : 'text-neutral-400'}>
+              {item.cue}
+            </span>
           </li>
         ))}
       </ul>
