@@ -248,6 +248,13 @@ export function PoseCamera({
       <div className="flex flex-col items-center gap-3 py-8">
         <div className="animate-spin w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full" />
         <p className="text-sm text-neutral-400">Loading pose detection...</p>
+        <p className="text-xs text-neutral-600">First load may take 30s</p>
+        <button
+          onClick={() => setStatus('error')}
+          className="text-xs text-neutral-500 underline mt-2"
+        >
+          Cancel and use manual counting
+        </button>
       </div>
     );
   }
