@@ -16,6 +16,10 @@ export interface PendingSet {
   form_score: number | null;
   cv_verified: boolean;
   duration_sec: number;
+  workout_type?: string;
+  day_of_week?: string;
+  streak_length?: number;
+  xp_earned?: number;
 }
 
 export interface PendingWorkout {
