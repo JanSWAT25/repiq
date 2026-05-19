@@ -36,6 +36,9 @@ export default function HomePage() {
   const { equipment } = useSettingsStore();
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [today, setToday] = useState('');
+  const [mounted, setMounted] = useState(false);
+  
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     const now = new Date();
@@ -68,20 +71,20 @@ export default function HomePage() {
         </div>
         <div className="flex items-center gap-1.5 bg-neutral-800 px-3 py-1.5 rounded-full">
           <span className="text-xl">🔥</span>
-          <span className="text-lg font-bold">{streak}</span>
+          <span className="text-lg font-bold">{mounted ? streak : 0}</span>
         </div>
       </header>
 
       {/* XP Bar */}
       <div className="px-4 mb-5">
         <div className="flex justify-between text-xs text-neutral-400 mb-1.5">
-          <span className="font-semibold">Level {level}</span>
-          <span>{totalXP.toLocaleString()} / {xpForNext.toLocaleString()} XP</span>
+        <span className="font-semibold">Level {mounted ? level : 1}</span>
+        <span>{mounted ? `${totalXP.toLocaleString()} / ${xpForNext.toLocaleString()} XP` : '...'}</span>
         </div>
         <div className="h-2 bg-neutral-800 rounded-full overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-red-600 to-red-400 rounded-full transition-all duration-500"
-            style={{ width: `${Math.min(100, xpProgress)}%` }}
+            style={{ width: mounted ? `${Math.min(100, xpProgress)}%` : '0%' }}
           />
         </div>
       </div>
