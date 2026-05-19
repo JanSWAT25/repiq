@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 
 export interface PendingSet {
   id?: number;
+  user_name?: string;
   timestamp_iso: string;
   session_id: string;
   exercise_id: string;
@@ -19,6 +20,7 @@ export interface PendingSet {
 
 export interface PendingWorkout {
   id?: number;
+  user_name?: string;
   timestamp_iso: string;
   session_id: string;
   day_of_week: string;
@@ -32,26 +34,54 @@ export interface PendingWorkout {
   synced: boolean;
 }
 
-export interface CompletedSession {
+export interface PendingStreak {
+  id?: number;
+  user_name?: string;
+  date: string;
+  completed: boolean;
+  streak_length: number;
+  streak_freezes_used: number;
+  xp_earned: number;
+  level_at_end: number;
+  synced: boolean;
+}
+
+export interface PendingAchievement {
+  id?: number;
+  user_name?: string;
+  timestamp_iso: string;
+  badge_id: string;
+  badge_name: string;
+  category: string;
+  xp_awarded: number;
+  synced: boolean;
+}
+
+export interface CompletedSet {
   id?: number;
   session_id: string;
   date: string; // YYYY-MM-DD
-  workout_type: string;
-  sets: PendingSet[];
-  completed_at: string;
+  exercise_id: string;
+  muscle_groups: string; // comma-separated
+  actual_reps: number;
+  sets: number;
 }
 
 class RepIQDatabase extends Dexie {
   pendingSets!: Table<PendingSet>;
   pendingWorkouts!: Table<PendingWorkout>;
-  completedSessions!: Table<CompletedSession>;
+  pendingStreaks!: Table<PendingStreak>;
+  pendingAchievements!: Table<PendingAchievement>;
+  completedSets!: Table<CompletedSet>;
 
   constructor() {
     super('RepIQDatabase');
-    this.version(1).stores({
+    this.version(2).stores({
       pendingSets: '++id, session_id, timestamp_iso',
       pendingWorkouts: '++id, session_id, synced',
-      completedSessions: '++id, session_id, date',
+      pendingStreaks: '++id, date, synced',
+      pendingAchievements: '++id, badge_id, synced',
+      completedSets: '++id, session_id, date, exercise_id',
     });
   }
 }
