@@ -96,8 +96,12 @@ export function PoseCamera({
         videoRef.current.onloadeddata = () => resolve();
       });
 
-      // Load MediaPipe
-      await getPoseLandmarker();
+      await Promise.race([
+        getPoseLandmarker(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Model load timeout')), 30000)
+        ),
+      ]);
 
       // Create tracker for this exercise
       trackerRef.current = createTrackerForExercise(exerciseId);
