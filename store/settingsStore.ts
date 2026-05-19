@@ -46,6 +46,6 @@ export const useSettingsStore = create<SettingsState>()(
         set({ notificationsEnabled }),
       setNotificationTime: (notificationTime) => set({ notificationTime }),
     }),
-    { name: 'repiq-settings',skipHydration: true, }
+    { name: 'repiq-settings' }
   )
 );
