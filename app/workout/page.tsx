@@ -162,6 +162,10 @@ function WorkoutPageInner() {
       form_score: currentFormScore,
       cv_verified: showCV && cvReps > 0,
       duration_sec: durationSec,
+      workout_type: workout.dupSlot,
+      day_of_week: getDayOfWeek(new Date()),
+      streak_length: streak,
+      xp_earned: xp,
     });
 
     // Save completed set for volume tracking
