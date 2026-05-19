@@ -215,7 +215,7 @@ function WorkoutPageInner() {
 
     // Check badges
     const allCompletedSets = await db.completedSets.toArray();
-    const uniqueExercises = [...new Set(allCompletedSets.map(s => s.exercise_id))];
+    const uniqueExercises = Array.from(new Set(allCompletedSets.map(s => s.exercise_id)));
     const totalSetsEver = await db.completedSets.count();
     const totalRepsEver = allCompletedSets.reduce((s, c) => s + c.actual_reps, 0);
     const earnedBadges = checkNewBadges({
