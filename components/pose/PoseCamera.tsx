@@ -99,7 +99,7 @@ export function PoseCamera({
       await Promise.race([
         getPoseLandmarker(),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Model load timeout')), 30000)
+          setTimeout(() => reject(new Error('Model load timeout')), 10000)
         ),
       ]);
 
@@ -235,7 +235,7 @@ export function PoseCamera({
           Use your camera to automatically count reps and score your form.
         </p>
         <div className="text-xs text-neutral-500 text-center px-4 mb-2">
-          📱 Place phone 6–10 ft away · Side view · Good lighting
+          📱 Place phone 6–10 ft away · Side view · Good lighting - Requires fast internet · ~7MB model download
         </div>
         <button
           onClick={startCamera}
