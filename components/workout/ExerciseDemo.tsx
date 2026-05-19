@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { getExerciseGifUrl, getCameraPosition } from '@/lib/workout/exerciseMedia';
+import { useState, useEffect } from 'react';
+import { getCameraPosition } from '@/lib/workout/exerciseMedia';
 import type { Exercise } from '@/lib/workout/exerciseLibrary';
 
 interface ExerciseDemoProps {
@@ -16,38 +16,45 @@ interface ExerciseDemoProps {
 export function ExerciseDemo({
   exercise, targetReps, rir, tempo, restSec, onStartSet
 }: ExerciseDemoProps) {
-  const [gifError, setGifError] = useState(false);
-  const gifUrl = getExerciseGifUrl(exercise.id);
+  const [svgLoaded, setSvgLoaded] = useState(false);
+  const [svgError, setSvgError] = useState(false);
   const cameraPos = getCameraPosition(exercise.id);
+  const svgUrl = `/api/exercise-demo?id=${exercise.id}`;
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Exercise GIF */}
-      <div className="relative bg-neutral-900 rounded-2xl overflow-hidden aspect-video">
-        {gifUrl && !gifError ? (
+      {/* Exercise Demo - AI Generated SVG */}
+      <div className="relative bg-[#0a0a0a] border border-[#1a1a1a] rounded-2xl overflow-hidden aspect-video">
+        {!svgError ? (
           <>
+            {!svgLoaded && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                <div className="animate-spin w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full" />
+                <p className="text-xs text-neutral-600">Generating demo...</p>
+              </div>
+            )}
             <img
-              src={gifUrl}
+              src={svgUrl}
               alt={exercise.name}
-              className="w-full h-full object-cover"
-              onError={() => setGifError(true)}
+              className={`w-full h-full object-contain transition-opacity duration-300 ${svgLoaded ? 'opacity-100' : 'opacity-0'}`}
+              onLoad={() => setSvgLoaded(true)}
+              onError={() => { setSvgError(true); setSvgLoaded(true); }}
             />
-            <div className="absolute bottom-2 right-2 bg-black/60 rounded-lg px-2 py-1">
-              <p className="text-xs text-neutral-300">Demo</p>
-            </div>
           </>
         ) : (
-          // Fallback animated SVG
-          <ExerciseSVGFallback exercise={exercise} />
+          <FallbackAnimation exercise={exercise} />
         )}
+        <div className="absolute top-2 left-2 bg-black/60 rounded-lg px-2 py-1">
+          <p className="text-xs text-red-400 font-semibold">AI Demo</p>
+        </div>
       </div>
 
       {/* Exercise details */}
       <div className="bg-[#141414] border border-[#262626] rounded-xl p-4">
-        <h3 className="text-lg font-bold mb-3">{exercise.name}</h3>
+        <h3 className="text-lg font-bold mb-2">{exercise.name}</h3>
         <p className="text-sm text-neutral-400 mb-3">{exercise.description}</p>
 
-        {/* Set prescription */}
+        {/* Set prescription grid */}
         <div className="grid grid-cols-4 gap-2 mb-3">
           {[
             { label: 'Reps', value: targetReps },
@@ -71,7 +78,7 @@ export function ExerciseDemo({
           ))}
         </div>
 
-        {/* Camera position guidance */}
+        {/* Camera position */}
         {exercise.cvSupported && (
           <div className="bg-blue-900/20 border border-blue-800/40 rounded-lg px-3 py-2 mb-3">
             <p className="text-xs font-bold text-blue-400 mb-0.5">📷 Camera Position</p>
@@ -93,19 +100,66 @@ export function ExerciseDemo({
   );
 }
 
-// Form cues per exercise
+// Fallback animated SVG if API fails
+function FallbackAnimation({ exercise }: { exercise: Exercise }) {
+  const cat = exercise.category;
+  return (
+    <div className="w-full h-full flex items-center justify-center">
+      <svg viewBox="0 0 300 200" className="w-full h-full">
+        <style>{`
+          @keyframes pushup { 0%,100%{transform:translateY(0)} 50%{transform:translateY(20px)} }
+          @keyframes squat { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(0.65) translateY(20px)} }
+          @keyframes pullup { 0%,100%{transform:translateY(20px)} 50%{transform:translateY(0)} }
+          @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+          .anim-push { animation: pushup 2s ease-in-out infinite; }
+          .anim-squat { animation: squat 2s ease-in-out infinite; transform-origin: bottom; }
+          .anim-pull { animation: pullup 2s ease-in-out infinite; }
+          .anim-pulse { animation: pulse 2s ease-in-out infinite; }
+        `}</style>
+        <rect width="300" height="200" fill="#0a0a0a"/>
+        <line x1="20" y1="175" x2="280" y2="175" stroke="#1a1a1a" stroke-width="2"/>
+        <g className={
+          cat.includes('push') || cat === 'dip' ? 'anim-push' :
+          cat.includes('squat') || cat.includes('hinge') ? 'anim-squat' :
+          cat.includes('pull') ? 'anim-pull' : 'anim-pulse'
+        } transform="translate(110, 40)">
+          <circle cx="40" cy="15" r="14" fill="none" stroke="#ef4444" strokeWidth="2.5"/>
+          <line x1="40" y1="29" x2="40" y2="75" stroke="#ef4444" strokeWidth="2.5"/>
+          <line x1="40" y1="45" x2="15" y2="65" stroke="#ef4444" strokeWidth="2.5"/>
+          <line x1="40" y1="45" x2="65" y2="65" stroke="#ef4444" strokeWidth="2.5"/>
+          <line x1="40" y1="75" x2="25" y2="110" stroke="#ef4444" strokeWidth="2.5"/>
+          <line x1="40" y1="75" x2="55" y2="110" stroke="#ef4444" strokeWidth="2.5"/>
+          <circle cx="25" cy="113" r="4" fill="#ef4444"/>
+          <circle cx="55" cy="113" r="4" fill="#ef4444"/>
+        </g>
+        <text x="150" y="193" textAnchor="middle" fill="#333" fontSize="9" fontFamily="sans-serif">
+          {exercise.name}
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+// Form cues
 function FormCues({ exerciseId }: { exerciseId: string }) {
   const cues: Record<string, string[]> = {
-    push_standard: ['Keep body in a straight line', 'Chest touches (or near) the floor', 'Elbows at 45° from torso', 'Full lockout at top'],
+    push_standard: ['Keep body in a straight line', 'Chest touches the floor', 'Elbows at 45° from torso', 'Full lockout at top'],
     push_incline: ['Same form as standard push-up', 'Hands elevated reduces difficulty', 'Great for learning the movement'],
     push_diamond: ['Hands form a diamond shape', 'Heavy tricep emphasis', 'Keep elbows close to body'],
-    pull_strict: ['Dead hang start', 'Pull chin over bar', 'Full arm extension at bottom', 'No kipping'],
+    push_decline: ['Feet elevated, upper chest focus', 'Keep core tight', 'Control the descent'],
+    push_archer: ['One arm takes most load', 'Other arm extends laterally', 'Alternate sides each rep'],
+    pull_strict: ['Dead hang start position', 'Pull chin over the bar', 'Full arm extension at bottom', 'No kipping or swinging'],
+    pull_chin: ['Supinated (palms facing you) grip', 'Greater bicep involvement', 'Full range of motion'],
+    row_australian: ['Body horizontal under bar', 'Pull chest to bar', 'Squeeze shoulder blades'],
     squat_bodyweight: ['Feet shoulder-width apart', 'Knees track over toes', 'Hip crease below parallel', 'Chest up throughout'],
-    squat_bulgarian: ['Rear foot elevated on bench', 'Front foot far enough forward', 'Keep torso upright', 'Drive through front heel'],
-    hinge_glute_bridge: ['Feet flat on floor', 'Drive hips to full extension', 'Squeeze glutes at top', '2-second hold at top'],
-    core_plank: ['Straight line from head to heels', 'Hips level — not sagging or piking', 'Breathe steadily', 'Engage core and glutes'],
-    dip_parallel: ['Full depression at bottom', 'Chest slightly forward', 'Full lockout at top', 'Control the descent'],
-    cond_burpee: ['Squat down, jump feet back', 'Perform a push-up', 'Jump feet forward', 'Explosive jump at top'],
+    squat_bulgarian: ['Rear foot elevated on bench', 'Front foot far forward enough', 'Keep torso upright', 'Drive through front heel'],
+    hinge_glute_bridge: ['Feet flat on floor', 'Drive hips to full extension', 'Squeeze glutes at top', '2-second hold'],
+    hinge_hip_thrust: ['Shoulders on bench edge', 'Drive hips up explosively', 'Full hip extension at top'],
+    core_plank: ['Straight line head to heels', 'Hips level — no sagging', 'Breathe steadily', 'Engage core and glutes'],
+    dip_parallel: ['Full depth — shoulders below elbows', 'Chest forward for chest focus', 'Full lockout at top'],
+    cond_burpee: ['Squat down, jump feet back', 'Perform push-up', 'Jump feet forward', 'Explosive jump with arms up'],
+    cond_mountain_climber: ['Plank position throughout', 'Drive knees to chest alternately', 'Keep hips level and stable'],
+    cond_lunge: ['Step back into lunge', 'Front knee at 90°', 'Keep torso upright', 'Drive through front heel to return'],
   };
 
   const exerciseCues = cues[exerciseId];
@@ -114,122 +168,14 @@ function FormCues({ exerciseId }: { exerciseId: string }) {
   return (
     <div>
       <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2">Form Cues</p>
-      <ul className="space-y-1">
+      <ul className="space-y-1.5">
         {exerciseCues.map((cue, i) => (
           <li key={i} className="flex items-start gap-2 text-xs text-neutral-300">
-            <span className="text-green-400 mt-0.5">✓</span>
+            <span className="text-green-400 mt-0.5 shrink-0">✓</span>
             <span>{cue}</span>
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-// Animated SVG fallback for exercises without GIFs
-function ExerciseSVGFallback({ exercise }: { exercise: Exercise }) {
-  const category = exercise.category;
-
-  return (
-    <div className="w-full h-full flex items-center justify-center bg-neutral-900">
-      <svg viewBox="0 0 200 150" className="w-full h-full max-w-xs">
-        <style>{`
-          @keyframes pushup {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(20px); }
-          }
-          @keyframes squat {
-            0%, 100% { transform: scaleY(1) translateY(0); }
-            50% { transform: scaleY(0.7) translateY(15px); }
-          }
-          @keyframes pullup {
-            0%, 100% { transform: translateY(20px); }
-            50% { transform: translateY(0); }
-          }
-          @keyframes plank {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-          }
-          .figure { animation-duration: 2s; animation-iteration-count: infinite; animation-timing-function: ease-in-out; }
-          .pushup-anim { animation-name: pushup; }
-          .squat-anim { animation-name: squat; }
-          .pullup-anim { animation-name: pullup; }
-          .plank-anim { animation-name: plank; }
-        `}</style>
-
-        {/* Background */}
-        <rect width="200" height="150" fill="#0a0a0a" />
-
-        {/* Floor line */}
-        <line x1="20" y1="120" x2="180" y2="120" stroke="#262626" strokeWidth="2" />
-
-        {/* Exercise name */}
-        <text x="100" y="140" textAnchor="middle" fill="#666" fontSize="9" fontFamily="sans-serif">
-          {exercise.name}
-        </text>
-
-        {/* Animated stick figure based on category */}
-        <g className={`figure ${
-          category.includes('push') ? 'pushup-anim' :
-          category.includes('squat') ? 'squat-anim' :
-          category.includes('pull') ? 'pullup-anim' :
-          'plank-anim'
-        }`}>
-          {category.includes('push') || category === 'dip' ? (
-            // Push-up figure
-            <g transform="translate(70, 60)">
-              <circle cx="30" cy="15" r="10" fill="none" stroke="#ef4444" strokeWidth="2" /> {/* head */}
-              <line x1="30" y1="25" x2="30" y2="50" stroke="#ef4444" strokeWidth="2" /> {/* body */}
-              <line x1="30" y1="35" x2="10" y2="50" stroke="#ef4444" strokeWidth="2" /> {/* L arm */}
-              <line x1="30" y1="35" x2="50" y2="50" stroke="#ef4444" strokeWidth="2" /> {/* R arm */}
-              <line x1="10" y1="50" x2="10" y2="55" stroke="#ef4444" strokeWidth="2" /> {/* L hand */}
-              <line x1="50" y1="50" x2="50" y2="55" stroke="#ef4444" strokeWidth="2" /> {/* R hand */}
-              <line x1="30" y1="50" x2="15" y2="60" stroke="#ef4444" strokeWidth="2" /> {/* L leg */}
-              <line x1="30" y1="50" x2="45" y2="60" stroke="#ef4444" strokeWidth="2" /> {/* R leg */}
-            </g>
-          ) : category.includes('squat') || category.includes('hinge') ? (
-            // Squat figure
-            <g transform="translate(80, 30)">
-              <circle cx="20" cy="10" r="10" fill="none" stroke="#ef4444" strokeWidth="2" />
-              <line x1="20" y1="20" x2="20" y2="50" stroke="#ef4444" strokeWidth="2" />
-              <line x1="20" y1="30" x2="5" y2="40" stroke="#ef4444" strokeWidth="2" />
-              <line x1="20" y1="30" x2="35" y2="40" stroke="#ef4444" strokeWidth="2" />
-              <line x1="20" y1="50" x2="10" y2="75" stroke="#ef4444" strokeWidth="2" />
-              <line x1="20" y1="50" x2="30" y2="75" stroke="#ef4444" strokeWidth="2" />
-              <line x1="10" y1="75" x2="5" y2="85" stroke="#ef4444" strokeWidth="2" />
-              <line x1="30" y1="75" x2="35" y2="85" stroke="#ef4444" strokeWidth="2" />
-            </g>
-          ) : category.includes('pull') ? (
-            // Pull-up figure
-            <g transform="translate(80, 10)">
-              <line x1="0" y1="5" x2="40" y2="5" stroke="#666" strokeWidth="3" /> {/* bar */}
-              <circle cx="20" cy="20" r="10" fill="none" stroke="#ef4444" strokeWidth="2" />
-              <line x1="20" y1="30" x2="20" y2="60" stroke="#ef4444" strokeWidth="2" />
-              <line x1="20" y1="38" x2="5" y2="25" stroke="#ef4444" strokeWidth="2" />
-              <line x1="20" y1="38" x2="35" y2="25" stroke="#ef4444" strokeWidth="2" />
-              <line x1="5" y1="25" x2="5" y2="10" stroke="#ef4444" strokeWidth="2" />
-              <line x1="35" y1="25" x2="35" y2="10" stroke="#ef4444" strokeWidth="2" />
-              <line x1="20" y1="60" x2="12" y2="80" stroke="#ef4444" strokeWidth="2" />
-              <line x1="20" y1="60" x2="28" y2="80" stroke="#ef4444" strokeWidth="2" />
-            </g>
-          ) : (
-            // Plank/core figure
-            <g transform="translate(30, 70)">
-              <circle cx="130" cy="20" r="10" fill="none" stroke="#ef4444" strokeWidth="2" />
-              <line x1="120" y1="25" x2="20" y2="35" stroke="#ef4444" strokeWidth="2" />
-              <line x1="120" y1="25" x2="105" y2="45" stroke="#ef4444" strokeWidth="2" />
-              <line x1="20" y1="35" x2="20" y2="45" stroke="#ef4444" strokeWidth="2" />
-              <line x1="105" y1="45" x2="80" y2="35" stroke="#ef4444" strokeWidth="2" />
-              <line x1="80" y1="35" x2="50" y2="35" stroke="#ef4444" strokeWidth="2" />
-              <line x1="50" y1="35" x2="50" y2="45" stroke="#ef4444" strokeWidth="2" />
-            </g>
-          )}
-        </g>
-
-        {/* Red accent dots */}
-        <circle cx="20" cy="10" r="3" fill="#ef4444" opacity="0.5" />
-        <circle cx="180" cy="10" r="3" fill="#ef4444" opacity="0.5" />
-      </svg>
     </div>
   );
 }
