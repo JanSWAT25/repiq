@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { getExerciseSVG } from '@/lib/workout/exerciseSVGs';
 import { getCameraPosition } from '@/lib/workout/exerciseMedia';
+import { getCachedWorkoutImage, getWorkoutImageCacheKey, setCachedWorkoutImage } from '@/lib/workout/imageCache';
 import type { Exercise } from '@/lib/workout/exerciseLibrary';
 
 interface ExerciseDemoProps {
@@ -18,8 +19,9 @@ export function ExerciseDemo({
   exercise, targetReps, rir, tempo, restSec, onStartSet
 }: ExerciseDemoProps) {
   const [svgContent, setSvgContent] = useState<string>('');
+  const [aiImageUrl, setAiImageUrl] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
-  const [useAI, setUseAI] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const cameraPos = getCameraPosition(exercise.id);
 
   // Load built-in SVG on mount
@@ -27,26 +29,60 @@ export function ExerciseDemo({
     setSvgContent(getExerciseSVG(exercise.id));
   }, [exercise.id]);
 
-  // Optionally load AI-enhanced version
-  async function loadAIDemo() {
+  const cacheKey = getWorkoutImageCacheKey({ exercise, targetReps, rir, tempo, restSec });
+
+  async function loadWorkoutImage(forceRefresh = false) {
+    setAiError(null);
     setAiLoading(true);
+
     try {
-      const res = await fetch(`/api/exercise-demo?id=${exercise.id}`);
-      const svg = await res.text();
-      if (svg.includes('<svg')) {
-        setSvgContent(svg);
-        setUseAI(true);
+      if (!forceRefresh) {
+        const cached = await getCachedWorkoutImage(cacheKey);
+        if (cached) {
+          setAiImageUrl(cached);
+          setAiLoading(false);
+          return;
+        }
       }
-    } catch {}
-    setAiLoading(false);
+
+      const res = await fetch('/api/workout-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exercise, targetReps, rir, tempo, restSec }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.imageUrl) {
+        throw new Error(data.error ?? 'Unable to generate image');
+      }
+
+      setAiImageUrl(data.imageUrl);
+      await setCachedWorkoutImage(cacheKey, data.imageUrl);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : 'Unable to generate image');
+    } finally {
+      setAiLoading(false);
+    }
   }
+
+  useEffect(() => {
+    setAiImageUrl(null);
+    loadWorkoutImage(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey]);
 
   return (
     <div className="flex flex-col gap-4">
       {/* Exercise Demo */}
       <div className="relative bg-[#0a0a0a] border border-[#1e1e1e] rounded-2xl overflow-hidden"
            style={{ aspectRatio: '16/10' }}>
-        {svgContent ? (
+        {aiImageUrl ? (
+          <img
+            src={aiImageUrl}
+            alt={`${exercise.name} workout demonstration`}
+            className="w-full h-full object-cover"
+          />
+        ) : svgContent ? (
           <div
             className="w-full h-full"
             dangerouslySetInnerHTML={{ __html: svgContent }}
@@ -61,11 +97,26 @@ export function ExerciseDemo({
           <div className="bg-black/70 rounded-lg px-2 py-1 flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
             <p className="text-xs text-neutral-300 font-medium">
-              {useAI ? 'AI Enhanced' : 'Animation'}
+              {aiImageUrl ? 'AI Generated' : aiLoading ? 'Generating...' : 'Animation'}
             </p>
           </div>
         </div>
       </div>
+
+      {aiError && (
+        <div className="bg-red-950/30 border border-red-900/40 rounded-xl px-3 py-2 text-xs text-red-300">
+          {aiError}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => loadWorkoutImage(true)}
+        disabled={aiLoading}
+        className="w-full bg-neutral-900 hover:bg-neutral-800 disabled:opacity-60 border border-neutral-800 text-neutral-200 font-semibold py-3 rounded-xl text-sm transition-colors"
+      >
+        {aiLoading ? 'Generating workout image...' : aiImageUrl ? 'Regenerate Image' : 'Generate Workout Image'}
+      </button>
 
       {/* Exercise info card */}
       <div className="bg-[#141414] border border-[#262626] rounded-2xl p-4">
