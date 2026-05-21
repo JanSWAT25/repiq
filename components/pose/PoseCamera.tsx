@@ -151,10 +151,10 @@ export function PoseCamera({
       } catch {
         // Fallback: rAF loop if MediaRecorder fails (iOS Safari)
         let last = 0;
-        function loop(ts: number) {
+        const loop = (ts: number) => {
           rafRef.current = requestAnimationFrame(loop);
           if (ts - last >= 100) { last = ts; processFrame(); }
-        }
+        };
         rafRef.current = requestAnimationFrame(loop);
       }
 
